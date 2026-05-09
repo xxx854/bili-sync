@@ -21,6 +21,11 @@ use crate::utils::model::{load_db_config, save_db_config};
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     ARGS.config_dir
         .clone()
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
+        })
         .or_else(|| dirs::config_dir().map(|dir| dir.join("bili-sync")))
         .expect("No config path found")
 });
@@ -30,6 +35,8 @@ pub struct Config {
     pub auth_token: String,
     pub bind_address: String,
     pub credential: Credential,
+    #[serde(default)]
+    pub download_credential: Option<Credential>,
     pub filter_option: FilterOption,
     pub danmaku_option: DanmakuOption,
     #[serde(default)]
@@ -62,6 +69,10 @@ impl Config {
 
     pub async fn save_to_database(&self, connection: &DatabaseConnection) -> Result<()> {
         save_db_config(self, connection).await
+    }
+
+    pub fn download_credential(&self) -> &Credential {
+        self.download_credential.as_ref().unwrap_or(&self.credential)
     }
 
     pub fn check(&self) -> Result<()> {
@@ -118,6 +129,7 @@ impl Default for Config {
             auth_token: default_auth_token(),
             bind_address: default_bind_address(),
             credential: Credential::default(),
+            download_credential: None,
             filter_option: FilterOption::default(),
             danmaku_option: DanmakuOption::default(),
             skip_option: SkipOption::default(),

@@ -175,6 +175,77 @@
 		}
 	}
 
+	// Cookie 粘贴 Dialog 相关
+	let showCookiePasteDialog = false;
+	let cookiePasteTarget: 'main' | 'download' = 'main';
+	let cookiePasteInput = '';
+
+	function parseCookieString(cookieStr: string): Credential {
+		const result: Credential = {
+			sessdata: '',
+			bili_jct: '',
+			buvid3: '',
+			dedeuserid: '',
+			ac_time_value: ''
+		};
+		const pairs = cookieStr.split(';');
+		for (const pair of pairs) {
+			const eqIndex = pair.indexOf('=');
+			if (eqIndex === -1) continue;
+			const key = pair.substring(0, eqIndex).trim();
+			const value = pair.substring(eqIndex + 1).trim();
+			switch (key) {
+				case 'SESSDATA':
+					result.sessdata = value;
+					break;
+				case 'bili_jct':
+					result.bili_jct = value;
+					break;
+				case 'buvid3':
+					result.buvid3 = value;
+					break;
+				case 'DedeUserID':
+					result.dedeuserid = value;
+					break;
+				case 'ac_time_value':
+					result.ac_time_value = value;
+					break;
+			}
+		}
+		return result;
+	}
+
+	function openCookiePasteDialog(target: 'main' | 'download') {
+		cookiePasteTarget = target;
+		cookiePasteInput = '';
+		showCookiePasteDialog = true;
+	}
+
+	function applyCookiePaste() {
+		if (!formData || !cookiePasteInput.trim()) {
+			toast.error('请粘贴 Cookie 字符串');
+			return;
+		}
+		const parsed = parseCookieString(cookiePasteInput.trim());
+		if (!parsed.sessdata || !parsed.bili_jct) {
+			toast.error('Cookie 中未找到 SESSDATA 或 bili_jct，请检查格式');
+			return;
+		}
+		if (cookiePasteTarget === 'main') {
+			formData.credential = parsed;
+			toast.success('已从 Cookie 填充主凭据');
+		} else {
+			formData.download_credential = parsed;
+			toast.success('已从 Cookie 填充下载凭据');
+		}
+		showCookiePasteDialog = false;
+		cookiePasteInput = '';
+	}
+
+	// Download QR 登录 Dialog 相关
+	let showDownloadQrLoginDialog = false;
+	let downloadQrLoginComponent: QrLogin;
+
 	function handleQrLoginSuccess(credential: Credential) {
 		if (!formData) return;
 
@@ -188,6 +259,28 @@
 
 		// 关闭弹窗
 		showQrLoginDialog = false;
+	}
+
+	function handleDownloadQrLoginSuccess(credential: Credential) {
+		if (!formData) return;
+
+		// 自动填充下载凭证到 formData
+		formData.download_credential = credential;
+
+		toast.success('扫码登录成功，已填充下载凭据');
+
+		// 自动保存配置
+		saveConfig();
+
+		// 关闭弹窗
+		showDownloadQrLoginDialog = false;
+	}
+
+	function clearDownloadCredential() {
+		if (!formData) return;
+		formData.download_credential = null;
+		toast.success('已清除下载凭据，将使用主凭据进行下载');
+		saveConfig();
 	}
 
 	onMount(() => {
@@ -384,25 +477,34 @@
 				<Tabs.Content value="auth" class="mt-6 space-y-6">
 					<div class="flex items-center justify-between">
 						<div class="space-y-1">
-							<Label class="text-base font-semibold">快速登录</Label>
-							<p class="text-muted-foreground text-sm">使用哔哩哔哩 APP 扫码登录，自动填充凭据</p>
+							<Label class="text-base font-semibold">主凭据（用于访问收藏夹等）</Label>
+							<p class="text-muted-foreground text-sm">
+								支持扫码登录或直接粘贴浏览器 Cookie 字符串
+							</p>
 						</div>
-						<Button
-							onclick={() => {
-								showQrLoginDialog = true;
-								tick().then(() => {
-									qrLoginComponent!.init();
-								});
-							}}
-						>
-							<QrCodeIcon class="mr-2 h-4 w-4" />
-							扫码登录
-						</Button>
+						<div class="flex gap-2">
+							<Button
+								variant="outline"
+								onclick={() => openCookiePasteDialog('main')}
+							>
+								粘贴 Cookie
+							</Button>
+							<Button
+								onclick={() => {
+									showQrLoginDialog = true;
+									tick().then(() => {
+										qrLoginComponent!.init();
+									});
+								}}
+							>
+								<QrCodeIcon class="mr-2 h-4 w-4" />
+								扫码登录
+							</Button>
+						</div>
 					</div>
 
 					<Separator />
 
-					<!-- 原有的手动输入 Cookie 表单 -->
 					<div class="space-y-4">
 						<div class="space-y-2">
 							<Label for="sessdata">SESSDATA</Label>
@@ -444,6 +546,98 @@
 								bind:value={formData.credential.ac_time_value}
 							/>
 						</div>
+					</div>
+
+					<Separator />
+
+					<!-- 下载凭据配置 -->
+					<div class="space-y-4">
+						<div class="flex items-center justify-between">
+							<div class="space-y-1">
+								<div class="flex items-center gap-2">
+									<Label class="text-base font-semibold">下载凭据（可选，用于获取高画质）</Label>
+									{#if formData.download_credential}
+										<Badge variant="secondary" class="text-xs">已配置</Badge>
+									{:else}
+										<Badge variant="outline" class="text-xs">未配置</Badge>
+									{/if}
+								</div>
+								<p class="text-muted-foreground text-sm">
+									如果主账号没有大会员，可以配置一个有大会员的账号凭据来下载高画质视频。
+									未配置时将使用主凭据进行下载。
+								</p>
+							</div>
+							<div class="flex gap-2">
+								<Button
+									variant="outline"
+									onclick={() => openCookiePasteDialog('download')}
+								>
+									粘贴 Cookie
+								</Button>
+								<Button
+									variant="outline"
+									onclick={() => {
+										showDownloadQrLoginDialog = true;
+										tick().then(() => {
+											downloadQrLoginComponent!.init();
+										});
+									}}
+								>
+									<QrCodeIcon class="mr-2 h-4 w-4" />
+									扫码登录
+								</Button>
+								{#if formData.download_credential}
+									<Button variant="destructive" onclick={clearDownloadCredential}>
+										清除
+									</Button>
+								{/if}
+							</div>
+						</div>
+
+						{#if formData.download_credential}
+							<div class="space-y-4">
+								<div class="space-y-2">
+									<Label for="dl-sessdata">SESSDATA</Label>
+									<PasswordInput
+										id="dl-sessdata"
+										placeholder="请输入SESSDATA"
+										bind:value={formData.download_credential.sessdata}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="dl-bili-jct">bili_jct</Label>
+									<PasswordInput
+										id="dl-bili-jct"
+										placeholder="请输入bili_jct"
+										bind:value={formData.download_credential.bili_jct}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="dl-buvid3">buvid3</Label>
+									<PasswordInput
+										id="dl-buvid3"
+										placeholder="请输入buvid3"
+										bind:value={formData.download_credential.buvid3}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="dl-dedeuserid">dedeuserid</Label>
+									<PasswordInput
+										id="dl-dedeuserid"
+										placeholder="请输入dedeuserid"
+										bind:value={formData.download_credential.dedeuserid}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="dl-ac-time-value">ac_time_value</Label>
+									<PasswordInput
+										id="dl-ac-time-value"
+										placeholder="请输入ac_time_value"
+										bind:value={formData.download_credential.ac_time_value}
+									/>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</Tabs.Content>
 
@@ -1027,11 +1221,71 @@
 			class="bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg"
 		>
 			<Dialog.Header>
-				<Dialog.Title>扫码登录</Dialog.Title>
+				<Dialog.Title>主凭据扫码登录</Dialog.Title>
 				<Dialog.Description>使用哔哩哔哩 APP 扫描二维码登录</Dialog.Description>
 			</Dialog.Header>
 
 			<QrLogin bind:this={qrLoginComponent} onSuccess={handleQrLoginSuccess} />
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<!-- 下载凭据 QR 登录弹窗 -->
+<Dialog.Root bind:open={showDownloadQrLoginDialog}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-background/80 fixed inset-0 z-50 backdrop-blur-sm" />
+		<Dialog.Content
+			class="bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg"
+		>
+			<Dialog.Header>
+				<Dialog.Title>下载凭据扫码登录</Dialog.Title>
+				<Dialog.Description>使用有大会员的哔哩哔哩 APP 扫描二维码登录</Dialog.Description>
+			</Dialog.Header>
+
+			<QrLogin bind:this={downloadQrLoginComponent} onSuccess={handleDownloadQrLoginSuccess} />
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<!-- Cookie 粘贴弹窗 -->
+<Dialog.Root bind:open={showCookiePasteDialog}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-background/80 fixed inset-0 z-50 backdrop-blur-sm" />
+		<Dialog.Content
+			class="bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg"
+		>
+			<Dialog.Header>
+				<Dialog.Title>
+					{cookiePasteTarget === 'main' ? '粘贴主凭据 Cookie' : '粘贴下载凭据 Cookie'}
+				</Dialog.Title>
+				<Dialog.Description>
+					从浏览器开发者工具中复制完整的 Cookie 字符串并粘贴到下方
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="space-y-4">
+				<div class="space-y-2">
+					<Label for="cookie-paste-input">Cookie 字符串</Label>
+					<textarea
+						id="cookie-paste-input"
+						class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[120px] w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+						placeholder="buvid3=xxx; bili_jct=xxx; SESSDATA=xxx; DedeUserID=xxx; ..."
+						bind:value={cookiePasteInput}
+					></textarea>
+					<p class="text-muted-foreground text-xs">
+						会自动提取 SESSDATA、bili_jct、buvid3、DedeUserID 等字段
+					</p>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => { showCookiePasteDialog = false; cookiePasteInput = ''; }}>
+					取消
+				</Button>
+				<Button onclick={applyCookiePaste}>
+					确认填充
+				</Button>
+			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>

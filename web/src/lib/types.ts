@@ -324,6 +324,7 @@ export interface Config {
 	auth_token: string;
 	bind_address: string;
 	credential: Credential;
+	download_credential?: Credential | null;
 	filter_option: FilterOption;
 	danmaku_option: DanmakuOption;
 	skip_option: SkipOption;

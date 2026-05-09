@@ -329,6 +329,24 @@ async fn check_and_refresh_credential(
             info!("Credential 已刷新并保存");
         }
     }
+    if let Some(download_credential) = &config.download_credential {
+        match bili_client
+            .check_refresh(download_credential)
+            .await
+            .context("检查刷新 Download Credential 失败")?
+        {
+            None => {
+                info!("Download Credential 无需刷新");
+            }
+            Some(new_credential) => {
+                VersionedConfig::get()
+                    .update_download_credential(new_credential, connection)
+                    .await
+                    .context("新 Download Credential 持久化失败")?;
+                info!("Download Credential 已刷新并保存");
+            }
+        }
+    }
     Ok(())
 }
 

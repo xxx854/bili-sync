@@ -109,6 +109,22 @@ impl VersionedConfig {
         Ok(new_config)
     }
 
+    pub async fn update_download_credential(
+        &self,
+        new_credential: Credential,
+        connection: &DatabaseConnection,
+    ) -> Result<Arc<Config>> {
+        let _lock = self.update_lock.lock().await;
+        let mut new_config = self.inner.load().as_ref().clone();
+        new_config.download_credential = Some(new_credential);
+        new_config.version += 1;
+        new_config.save_to_database(connection).await?;
+        let new_config = Arc::new(new_config);
+        self.inner.store(new_config.clone());
+        self.tx.send(new_config.clone())?;
+        Ok(new_config)
+    }
+
     /// 外部 API 会调用这个方法，如果更新失败直接返回错误
     pub async fn update(&self, mut new_config: Config, connection: &DatabaseConnection) -> Result<Arc<Config>> {
         let _lock = self.update_lock.lock().await;
